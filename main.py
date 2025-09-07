@@ -1,36 +1,59 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
-import asyncio
+from flask import Flask
+from threading import Thread
+import os
 
-# Логирование (не хранит личные данные)
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Логирование
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ⚙️ ВСТАВЬ СЮДА ТОКЕН ОТ @BotFather
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+# ⚙️ НАСТРОЙКИ — токен должен быть в Secrets!
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # 👈 ЗАМЕНИ НА ТОКЕН ОТ @BotFather (через Replit Secrets)
 
-# 🧠 Список чатов для рассылки
+if not TOKEN:
+    raise ValueError("❌ Переменная окружения TELEGRAM_BOT_TOKEN не задана. Задай её в Replit → Secrets!")
+
+# 🧠 Хранилище: только ID чатов, куда можно рассылать
 subscribers = set()
+
+# 🌐 Веб-сервер для Replit (чтобы проект не засыпал)
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "OK", 200
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# 🆘 Обработчик ошибок — чтобы бот не падал
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Произошла ошибка: {context.error}")
+    # Не останавливаем бота — просто логируем
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     subscribers.add(chat_id)
     await update.message.reply_text(
-        "🌌 Добро пожаловать в *Абсолютную Анонимность*.\n\n"
-        "📩 Пиши что угодно — все получат это сообщение.\n"
-        "👤 Никто не узнает автора. Никогда. Даже я.\n\n"
-        "Готов? Начинай 👇",
+        "🔮 Добро пожаловать в *Абсолютно Анонимный Чат*.\n\n"
+        "📩 Пиши что угодно — твоё сообщение получат все участники.\n"
+        "👤 Никто не узнает, кто его отправил. Даже админ.\n"
+        "🚫 Никаких имён, ID, меток. Только твои слова.\n\n"
+        "Готов? Пиши первое сообщение 👇",
         parse_mode="Markdown"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    subscribers.add(chat_id)
+    subscribers.add(chat_id)  # добавляем нового пользователя
 
+    # Определяем тип контента
     if update.message.text:
         content = update.message.text
         is_voice = False
@@ -38,49 +61,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content = update.message.voice.file_id
         is_voice = True
     else:
-        await update.message.reply_text("Принимаю только текст и голосовые.")
+        await update.message.reply_text("Поддерживаются только текст и голосовые сообщения.")
         return
 
-    # Сообщение для рассылки
-    broadcast_text = "📩 Анонимное сообщение:" if not is_voice else "📩 Анонимное голосовое:"
+    # Рассылаем ВСЕМ (включая отправителя — для ощущения чата)
+    broadcast_text = "📩 Новое анонимное сообщение:" if not is_voice else "📩 Новое анонимное голосовое:"
 
+    success_count = 0
     failed_ids = set()
-    for target_id in list(subscribers):
+
+    for target_id in list(subscribers):  # копируем, чтобы избежать ошибок при удалении
         try:
             await context.bot.send_message(chat_id=target_id, text=broadcast_text)
             if is_voice:
                 await context.bot.send_voice(chat_id=target_id, voice=content)
             else:
                 await context.bot.send_message(chat_id=target_id, text=content)
+            success_count += 1
         except Exception as e:
-            logger.warning(f"Не удалось отправить в {target_id}: {e}")
+            logger.error(f"Не удалось отправить сообщение в {target_id}: {e}")
             failed_ids.add(target_id)
 
-    # Чистим мертвые чаты
+    # Удаляем неактивных (заблокировали бота и т.п.)
     for bad_id in failed_ids:
         subscribers.discard(bad_id)
 
-    await update.message.reply_text("✅ Доставлено анонимно всем.")
+    await update.message.reply_text("✅ Сообщение отправлено анонимно всем.")
 
-# 🚀 Основная функция запуска
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Запускаем веб-сервер ДО бота
+    keep_alive()
+
+    application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT | filters.VOICE, handle_message))
+    application.add_error_handler(error_handler)  # 👈 Добавили обработчик ошибок
 
-    logger.info("🚀 Анонимный чат-бот запущен. Никто не знает автора.")
-
-    # Запуск с обработкой прерываний (костыль для Replit)
-    try:
-        application.run_polling()
-    except KeyboardInterrupt:
-        logger.info("Бот остановлен вручную.")
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        # Перезапуск через 5 секунд (костыль для стабильности)
-        asyncio.run(asyncio.sleep(5))
-        main()
+    logger.info("🚀 Абсолютно анонимный чат-бот запущен. Никто не знает автора — даже админ.")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
