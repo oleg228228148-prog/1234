@@ -10,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # ⚙️ НАСТРОЙКИ — токен должен быть в Secrets!
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # 👈 ЗАМЕНИ НА ТОКЕН ОТ @BotFather (через Replit Secrets)
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # 👈 ЗАМЕНИ НА ТОКЕН ОТ @BotFather (через Replit → Secrets)
 
 if not TOKEN:
     raise ValueError("❌ Переменная окружения TELEGRAM_BOT_TOKEN не задана. Задай её в Replit → Secrets!")
